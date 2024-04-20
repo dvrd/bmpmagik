@@ -1,0 +1,11 @@
+{
+    version: "0.0.1",
+    name: "bmpmagik",
+    owner: "Dan Castrillo<dan@devoured.io>",
+    description: "bmp image manipulation library",
+    url: "github.com/dvrd/bmpmagik",
+    readme: "",
+    license: "",
+    keywords: [],
+    dependencies: {}
+}

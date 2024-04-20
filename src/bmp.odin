@@ -8,7 +8,7 @@ BMP_CompressionType :: enum {
 	RLE4 = 2,
 }
 
-Pixel :: [3]u8
+Pixel :: distinct [3]byte
 
 BMP_Image :: struct {
 	size:             u32,
@@ -25,5 +25,13 @@ BMP_Image :: struct {
 	colors_used:      u32,
 	important_colors: u32,
 	color_table:      []byte,
-	data:             []Pixel,
+	data:             [][]Pixel,
+}
+
+delete_bmp :: proc(img: ^BMP_Image) {
+	for row in img.data {
+		delete(row)
+	}
+	delete(img.data)
+	free(img)
 }

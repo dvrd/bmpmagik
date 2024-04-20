@@ -63,14 +63,27 @@ read_bmp :: proc(path: string) -> (img: ^BMP_Image, ok: bool) {
 		img.color_table = color_table
 	}
 
-	data := make([]Pixel, img.img_size / 3)
-	defer delete(data)
-
+	data := make([][]Pixel, img.height)
 	img.data = data
-	for i := 0; io_err != .EOF && i < len(data); i += 1 {
-		img.data[i].b, io_err = io.read_byte(stream)
-		img.data[i].g, io_err = io.read_byte(stream)
-		img.data[i].r, io_err = io.read_byte(stream)
+	loop: for x := 0; x < img.height; x += 1 {
+		data[x] = make([]Pixel, img.width);
+		for y := 0; y < img.width; y += 1 {
+			if img.colors_used == 0 {
+				img.data[x][y].b, io_err = io.read_byte(stream)
+				if io_err == .EOF do break loop
+				img.data[x][y].g, io_err = io.read_byte(stream)
+				if io_err == .EOF do break loop
+				img.data[x][y].r, io_err = io.read_byte(stream)
+				if io_err == .EOF do break loop
+			} else {
+				pixel: byte
+				pixel, io_err = io.read_byte(stream)
+				if io_err == .EOF do break loop
+				img.data[x][y].b = pixel
+				img.data[x][y].g = pixel
+				img.data[x][y].r = pixel
+			}
+		}
 	}
 
 	return img, true
@@ -154,13 +167,20 @@ write_bmp :: proc(img: ^BMP_Image, path: string) -> (ok: bool) {
 		if io_err != nil || bits != 1024 do return false
 	}
 
-	for &pixel in img.data {
-		io_err = io.write_byte(stream, pixel.b)
-		if io_err != nil do return false
-		io_err = io.write_byte(stream, pixel.g)
-		if io_err != nil do return false
-		io_err = io.write_byte(stream, pixel.r)
-		if io_err != nil do return false
+	for row in img.data {
+		for pixel in row {
+			if img.colors_used == 0 {
+				io_err = io.write_byte(stream, pixel.b)
+				if io_err != nil do return false
+				io_err = io.write_byte(stream, pixel.g)
+				if io_err != nil do return false
+				io_err = io.write_byte(stream, pixel.r)
+				if io_err != nil do return false
+			} else {
+				io_err = io.write_byte(stream, pixel.r)
+				if io_err != nil do return false
+			}
+		}
 	}
 
 	return true
