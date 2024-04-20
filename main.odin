@@ -82,12 +82,11 @@ read_bmp :: proc(path: string) -> (img: ^BMP_Image, ok: bool) {
 	img.important_colors = endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
 
 	if img.bit_depth <= 8 {
-		color_table := [1024]byte {
-			0 ..< 1024 = 0,
-		}
-		bits, io_err = io.read(stream, color_table[:])
+		color_table := make([]byte, 1024)
+		defer delete(color_table)
+		bits, io_err = io.read(stream, color_table)
 		if io_err != nil || bits != 1024 do return nil, false
-		img.color_table = color_table[:]
+		img.color_table = color_table
 	}
 
 	data := make([]byte, img.img_size)
@@ -104,18 +103,80 @@ write_bmp :: proc(img: ^BMP_Image, path: string) -> (ok: bool) {
 		os.O_WRONLY | os.O_TRUNC | os.O_CREATE,
 		os.S_IRUSR | os.S_IRGRP | os.S_IROTH | os.S_IWUSR,
 	)
+	defer os.close(fd)
+
 	sig := hex.decode(BMP_SIG) or_return
+	defer delete(sig)
 
 	stream := os.stream_from_handle(fd)
 	bits, io_err := io.write(stream, sig)
 	if io_err != nil || bits != 2 do return false
 
 	bit32_buf := [4]byte{0, 0, 0, 0}
-	endian.put_u32(bit32_buf, .Little, img.size)
-	bits, io_err := io.write(stream, bit32_buf)
-	clear(bit32_buf)
-	bits, io_err := io.write(stream, bit32_buf)
-	endian.put_u32(bit32_buf, .Little, img.data_offset)
+	bit16_buf := [2]byte{0, 0}
+
+	endian.put_u32(bit32_buf[:], .Little, img.size)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	bits, io_err = io.write(stream, []byte{0, 0, 0, 0})
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.data_offset)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.bitmap_size)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.width)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.height)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u16(bit16_buf[:], .Little, img.planes)
+	bits, io_err = io.write(stream, bit16_buf[:])
+	if io_err != nil || bits != 2 do return false
+
+	endian.put_u16(bit16_buf[:], .Little, img.bit_depth)
+	bits, io_err = io.write(stream, bit16_buf[:])
+	if io_err != nil || bits != 2 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, u32(img.compression_type))
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.img_size)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.x_ppm)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.y_ppm)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.colors_used)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	endian.put_u32(bit32_buf[:], .Little, img.important_colors)
+	bits, io_err = io.write(stream, bit32_buf[:])
+	if io_err != nil || bits != 4 do return false
+
+	if img.bit_depth <= 8 {
+		bits, io_err = io.write(stream, img.color_table)
+		if io_err != nil || bits != 1024 do return false
+	}
+
+	bits, io_err = io.write(stream, img.data)
+	if io_err != nil || cast(u32)bits != img.img_size do return false
 
 	return true
 }
