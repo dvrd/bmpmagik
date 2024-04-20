@@ -5,6 +5,7 @@ import "core:encoding/endian"
 import "core:encoding/hex"
 import "core:fmt"
 import "core:io"
+import "core:math/bits"
 import "core:mem"
 import "core:os"
 
@@ -16,22 +17,24 @@ BMP_CompressionType :: enum {
 	RLE4 = 2,
 }
 
+Pixel :: [3]u8
+
 BMP_Image :: struct {
 	size:             u32,
-	width:            u32,
-	height:           u32,
+	width:            int,
+	height:           int,
 	data_offset:      u32,
 	bitmap_size:      u32,
 	planes:           u16,
 	bit_depth:        u16,
 	compression_type: BMP_CompressionType,
-	img_size:         u32,
+	img_size:         int,
 	x_ppm:            u32,
 	y_ppm:            u32,
 	colors_used:      u32,
 	important_colors: u32,
 	color_table:      []byte,
-	data:             []byte,
+	data:             []Pixel,
 }
 
 read_bmp :: proc(path: string) -> (img: ^BMP_Image, ok: bool) {
@@ -65,14 +68,15 @@ read_bmp :: proc(path: string) -> (img: ^BMP_Image, ok: bool) {
 	img.bitmap_size = endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
 	if img.bitmap_size != 40 do return nil, false
 
-	img.width = endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
-	img.height = endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
+	img.width = cast(int)endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
+	img.height = cast(int)endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
+
 	img.planes = endian.get_u16(bytes.buffer_next(&buf, 2), .Little) or_return
 	img.bit_depth = endian.get_u16(bytes.buffer_next(&buf, 2), .Little) or_return
 
 	img.compression_type =
 	cast(BMP_CompressionType)endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
-	img.img_size = endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
+	img.img_size = cast(int)endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
 	if img.img_size == 0 && img.compression_type != .RGB do return nil, false
 
 	img.x_ppm = endian.get_u32(bytes.buffer_next(&buf, 4), .Little) or_return
@@ -89,10 +93,15 @@ read_bmp :: proc(path: string) -> (img: ^BMP_Image, ok: bool) {
 		img.color_table = color_table
 	}
 
-	data := make([]byte, img.img_size)
+	data := make([]Pixel, img.img_size / 3)
 	defer delete(data)
-	bits, io_err = io.read(stream, data)
+
 	img.data = data
+	for i := 0; io_err != .EOF && i < len(data); i += 1 {
+		img.data[i].b, io_err = io.read_byte(stream)
+		img.data[i].g, io_err = io.read_byte(stream)
+		img.data[i].r, io_err = io.read_byte(stream)
+	}
 
 	return img, true
 }
@@ -130,11 +139,11 @@ write_bmp :: proc(img: ^BMP_Image, path: string) -> (ok: bool) {
 	bits, io_err = io.write(stream, bit32_buf[:])
 	if io_err != nil || bits != 4 do return false
 
-	endian.put_u32(bit32_buf[:], .Little, img.width)
+	endian.put_u32(bit32_buf[:], .Little, cast(u32)img.width)
 	bits, io_err = io.write(stream, bit32_buf[:])
 	if io_err != nil || bits != 4 do return false
 
-	endian.put_u32(bit32_buf[:], .Little, img.height)
+	endian.put_u32(bit32_buf[:], .Little, cast(u32)img.height)
 	bits, io_err = io.write(stream, bit32_buf[:])
 	if io_err != nil || bits != 4 do return false
 
@@ -150,7 +159,7 @@ write_bmp :: proc(img: ^BMP_Image, path: string) -> (ok: bool) {
 	bits, io_err = io.write(stream, bit32_buf[:])
 	if io_err != nil || bits != 4 do return false
 
-	endian.put_u32(bit32_buf[:], .Little, img.img_size)
+	endian.put_u32(bit32_buf[:], .Little, cast(u32)img.img_size)
 	bits, io_err = io.write(stream, bit32_buf[:])
 	if io_err != nil || bits != 4 do return false
 
@@ -175,41 +184,110 @@ write_bmp :: proc(img: ^BMP_Image, path: string) -> (ok: bool) {
 		if io_err != nil || bits != 1024 do return false
 	}
 
-	bits, io_err = io.write(stream, img.data)
-	if io_err != nil || cast(u32)bits != img.img_size do return false
+	for &pixel in img.data {
+		io_err = io.write_byte(stream, pixel.b)
+		if io_err != nil do return false
+		io_err = io.write_byte(stream, pixel.g)
+		if io_err != nil do return false
+		io_err = io.write_byte(stream, pixel.r)
+		if io_err != nil do return false
+	}
 
 	return true
 }
 
-main :: proc() {
-	track: mem.Tracking_Allocator
-	mem.tracking_allocator_init(&track, context.allocator)
-	context.allocator = mem.tracking_allocator(&track)
-
-	defer {
-		if len(track.allocation_map) > 0 {
-			fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
-			for _, entry in track.allocation_map {
-				fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
-			}
+grayscale :: proc(img: ^BMP_Image) {
+	for i := 0; i < img.height; i += 1 {
+		for j := 0; j < img.width; j += 1 {
+			img.data[i * img.width + j] = 255 - img.data[i * img.width + j]
 		}
-		if len(track.bad_free_array) > 0 {
-			fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
-			for entry in track.bad_free_array {
-				fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
-			}
-		}
-		mem.tracking_allocator_destroy(&track)
 	}
+}
 
+brighten_pixel :: proc(pixel: Pixel, factor: u8) -> (new_pixel: Pixel) {
+	brighter: u8
+	did_overflow: bool
+	for channel, idx in pixel {
+		brighter, did_overflow = bits.overflowing_add(channel, factor)
+		new_pixel[idx] = did_overflow ? 255 : brighter
+	}
+	return
+}
 
-	src := "./images/lena512.bmp"
+brighten :: proc(img: ^BMP_Image, factor: u8) {
+	for i := 0; i < img.width * img.height; i += 1 {
+		img.data[i] = brighten_pixel(img.data[i], factor)
+	}
+}
+
+halftone :: proc(img: ^BMP_Image, threshold: u8) {
+	for i := 0; i < img.width * img.height; i += 1 {
+		for &channel in img.data[i] {
+			channel = channel > threshold ? 255 : 0;
+		}
+	}
+}
+
+rgb_to_gray :: proc(img: ^BMP_Image) {
+	cur_pixel: Pixel
+	y: f64
+	for i := 0; i < img.height * img.width; i += 1 {
+		cur_pixel = img.data[i]
+		y = (cast(f64)cur_pixel.r * 0.3) + (cast(f64)cur_pixel.g * 0.59) + (cast(f64)cur_pixel.b * 0.11);
+		img.data[i] = cast(u8)y
+	}
+}
+
+GAUSSIAN :: matrix[3, 3]f64{0..<9=1.0/9.0};
+blur :: proc(img: ^BMP_Image, kernel := GAUSSIAN) {
+	cur_pixel: Pixel
+	new_pixel: [3]f64
+	for x := 1; x < img.height - 1; x += 1 {
+		for y := 1; y < img.width - 1; y += 1 {
+			new_pixel = {0,0,0}
+			cur_pixel = {0,0,0}
+			for i := -1; i <= 1; i += 1{
+				for j := -1; j <= 1; j += 1 {
+					cur_pixel = img.data[(x + i) * img.width + (y + j)]
+					new_pixel.r += kernel[i + 1, j + 1] * cast(f64)cur_pixel.r;
+					new_pixel.g += kernel[i + 1, j + 1] * cast(f64)cur_pixel.g;
+					new_pixel.b += kernel[i + 1, j + 1] * cast(f64)cur_pixel.b;
+				}
+			}
+			cur_pixel.r = new_pixel.r > 255 ? 255 : cast(u8)new_pixel.r
+			cur_pixel.g = new_pixel.g > 255 ? 255 : cast(u8)new_pixel.g
+			cur_pixel.b = new_pixel.b > 255 ? 255 : cast(u8)new_pixel.b
+			img.data[x * img.width + y] = cur_pixel
+		}
+	}
+}
+
+sepia :: proc(img: ^BMP_Image) {
+	new_pixel: [3]f64
+	for i := 0; i < img.width * img.height; i += 1 {
+		new_pixel.r = (cast(f64)img.data[i].r * 0.393) + (cast(f64)img.data[i].g * 0.769)	+ (cast(f64)img.data[i].b * 0.189);
+		new_pixel.g = (cast(f64)img.data[i].r * 0.349) + (cast(f64)img.data[i].g * 0.686)	+ (cast(f64)img.data[i].b * 0.168);
+		new_pixel.b = (cast(f64)img.data[i].r * 0.272) + (cast(f64)img.data[i].g * 0.534)	+ (cast(f64)img.data[i].b * 0.131);
+		img.data[i].r = new_pixel.r > 255 ? 255 : cast(u8)new_pixel.r
+		img.data[i].g = new_pixel.g > 255 ? 255 : cast(u8)new_pixel.g
+		img.data[i].b = new_pixel.b > 255 ? 255 : cast(u8)new_pixel.b
+	}
+}
+
+main :: proc() {
+	src := os.args[1]
 	target := "./images/lena_copy.bmp"
 
 	img, ok := read_bmp(src)
 	if !ok do fmt.panicf("Failed to read the BMP file")
 	defer free(img)
 
-	fmt.printfln("Image Size: %M", img.img_size)
+	fmt.printfln("file size: %M", img.size)
+	fmt.println("size in bytes:", img.img_size)
+	fmt.println("width in pixels:", img.width)
+	fmt.println("height in pixels:", img.width)
+
+	rgb_to_gray(img)
+
 	write_bmp(img, target)
 }
