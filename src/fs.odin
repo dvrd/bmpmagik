@@ -63,26 +63,23 @@ read_bmp :: proc(path: string) -> (img: ^BMP_Image, ok: bool) {
 		img.color_table = color_table
 	}
 
-	data := make(Img, img.height)
+	data := make([]Pixel, img.width * img.height)
 	img.data = data
-	loop: for x := 0; x < img.height; x += 1 {
-		data[x] = make([]Pixel, img.width)
-		for y := 0; y < img.width; y += 1 {
-			if img.colors_used == 0 {
-				img.data[x][y].b, io_err = io.read_byte(stream)
-				if io_err == .EOF do break loop
-				img.data[x][y].g, io_err = io.read_byte(stream)
-				if io_err == .EOF do break loop
-				img.data[x][y].r, io_err = io.read_byte(stream)
-				if io_err == .EOF do break loop
-			} else {
-				pixel: byte
-				pixel, io_err = io.read_byte(stream)
-				if io_err == .EOF do break loop
-				img.data[x][y].b = pixel
-				img.data[x][y].g = pixel
-				img.data[x][y].r = pixel
-			}
+	pixel: ^Pixel
+	pixel_byte: byte
+	loop: for i := 0; i < img.width * img.height; i += 1 {
+		pixel = &img.data[i]
+		if img.colors_used == 0 {
+			pixel.b, io_err = io.read_byte(stream)
+			if io_err == .EOF do break loop
+			pixel.g, io_err = io.read_byte(stream)
+			if io_err == .EOF do break loop
+			pixel.r, io_err = io.read_byte(stream)
+			if io_err == .EOF do break loop
+		} else {
+			pixel_byte, io_err = io.read_byte(stream)
+			if io_err == .EOF do break loop
+			pixel^ = pixel_byte
 		}
 	}
 
@@ -167,19 +164,17 @@ write_bmp :: proc(img: ^BMP_Image, path: string) -> (ok: bool) {
 		if io_err != nil || bits != 1024 do return false
 	}
 
-	for row in img.data {
-		for pixel in row {
-			if img.colors_used == 0 {
-				io_err = io.write_byte(stream, pixel.b)
-				if io_err != nil do return false
-				io_err = io.write_byte(stream, pixel.g)
-				if io_err != nil do return false
-				io_err = io.write_byte(stream, pixel.r)
-				if io_err != nil do return false
-			} else {
-				io_err = io.write_byte(stream, pixel.r)
-				if io_err != nil do return false
-			}
+	for pixel in img.data {
+		if img.colors_used == 0 {
+			io_err = io.write_byte(stream, pixel.b)
+			if io_err != nil do return false
+			io_err = io.write_byte(stream, pixel.g)
+			if io_err != nil do return false
+			io_err = io.write_byte(stream, pixel.r)
+			if io_err != nil do return false
+		} else {
+			io_err = io.write_byte(stream, pixel.r)
+			if io_err != nil do return false
 		}
 	}
 

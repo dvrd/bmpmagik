@@ -1,5 +1,7 @@
 package bmpmagik
 
+import "core:fmt"
+
 BMP_SIG :: []byte{'4', '2', '4', 'd'}
 
 BMP_CompressionType :: enum {
@@ -9,7 +11,6 @@ BMP_CompressionType :: enum {
 }
 
 Pixel :: distinct [3]byte
-Img :: [][]Pixel
 
 BMP_Image :: struct {
 	size:             u32,
@@ -26,15 +27,29 @@ BMP_Image :: struct {
 	colors_used:      u32,
 	important_colors: u32,
 	color_table:      []byte,
-	data:             Img,
-}
-
-delete_img :: proc(img_matrix: Img) {
-	for row in img_matrix do delete(row)
-	delete(img_matrix)
+	data:             []Pixel,
 }
 
 delete_bmp :: proc(img: ^BMP_Image) {
-	delete_img(img.data)
+	delete(img.data)
 	free(img)
 }
+
+pixel_at :: proc(img: ^BMP_Image, x, y: int) -> ^Pixel {
+	return &img.data[y * img.width + x]
+}
+
+row :: proc(img: ^BMP_Image, index: int) -> []Pixel {
+    r := img.data[index * img.width:][:img.width]
+    return r
+}
+
+col :: proc(img: ^BMP_Image, y: int) -> []Pixel {
+	result := make([dynamic]Pixel)
+	for x := 0; x < img.height; x += 1 {
+		r := row(img, x)
+		append(&result, r[x])
+	}
+	return result[:]
+}
+

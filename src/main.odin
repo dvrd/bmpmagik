@@ -10,6 +10,7 @@ import "core:math/bits"
 import "core:mem"
 import "core:os"
 import "core:slice"
+import "vendor:raylib"
 
 main :: proc() {
 	src := slice.get(os.args, 1) or_else "./images/lena_color.bmp"
@@ -24,7 +25,9 @@ main :: proc() {
 	fmt.println("width in pixels:", img.width)
 	fmt.println("height in pixels:", img.width)
 
-	rotate90(img)
+	sepia(img)
+	blur(img)
+	rotate(img, 270)
 
 	write_bmp(img, target)
 }
