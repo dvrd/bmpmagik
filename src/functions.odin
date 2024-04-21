@@ -1,6 +1,8 @@
 package bmpmagik
 
 import "core:math/bits"
+import "core:fmt"
+import "core:slice"
 
 grayscale :: proc(img: ^BMP_Image) {
 	for x := 0; x < img.width; x += 1 {
@@ -58,8 +60,8 @@ NINTH :: matrix[3, 3]f64{0..<9=1.0/9.0};
 blur :: proc(img: ^BMP_Image, kernel := NINTH) {
 	cur_pixel: Pixel
 	new_pixel: [3]f64
-	for x := 1; x < img.height - 1; x += 1 {
-		for y := 1; y < img.width - 1; y += 1 {
+	for x := 0; x < img.height; x += 1 {
+		for y := 0; y < img.width; y += 1 {
 			new_pixel = {0,0,0}
 			cur_pixel = {0,0,0}
 			for i := -1; i <= 1; i += 1{
@@ -80,8 +82,8 @@ blur :: proc(img: ^BMP_Image, kernel := NINTH) {
 
 sepia :: proc(img: ^BMP_Image) {
 	new_pixel: [3]f64
-	for x := 1; x < img.height - 1; x += 1 {
-		for y := 1; y < img.width - 1; y += 1 {
+	for x := 0; x < img.height; x += 1 {
+		for y := 0; y < img.width; y += 1 {
 			new_pixel.r = (cast(f64)img.data[x][y].r * 0.393) + (cast(f64)img.data[x][y].g * 0.769)	+ (cast(f64)img.data[x][y].b * 0.189);
 			new_pixel.g = (cast(f64)img.data[x][y].r * 0.349) + (cast(f64)img.data[x][y].g * 0.686)	+ (cast(f64)img.data[x][y].b * 0.168);
 			new_pixel.b = (cast(f64)img.data[x][y].r * 0.272) + (cast(f64)img.data[x][y].g * 0.534)	+ (cast(f64)img.data[x][y].b * 0.131);
@@ -92,21 +94,29 @@ sepia :: proc(img: ^BMP_Image) {
 	}
 }
 
-cool_effect :: proc(img: ^BMP_Image) {
-	for x := 1; x < img.width - 1; x += 1 {
-		for y := 1; y < img.height - 1; y += 1 {
-			img.data[img.width - 1 - x][y] = img.data[x][y];
-		}
-	}
-}
-
 rotate180 :: proc(img: ^BMP_Image) {
 	tmp: Pixel
-	for x := 1; x < img.width - 1; x += 1 {
-		for y := 1; y < img.height - 1; y += 1 {
-			tmp = img.data[img.width - x][y]
-			img.data[img.width - x][y] = img.data[x][y];
-			img.data[x][y] = tmp
+	data_copy := make(Img, img.height)
+	for x := 0; x < img.height; x += 1 {
+		data_copy[img.height - 1 - x] = make([]Pixel, img.width)
+		for y := 0; y < img.width; y += 1 {
+			data_copy[img.height - 1 - x][y] = img.data[x][y]
 		}
 	}
+	delete_img(img.data)
+	img.data = data_copy
 }
+
+rotate90 :: proc(img: ^BMP_Image) {
+	tmp: Pixel
+	data_copy := make(Img, img.height)
+	for row, idx in img.data do data_copy[idx] = make([]Pixel, img.width)
+	for x := 0; x < img.height; x += 1 {
+		for y := 0; y < img.width; y += 1 {
+			data_copy[y][img.width - 1 - x] = img.data[x][y]
+		}
+	}
+	delete_img(img.data)
+	img.data = data_copy
+}
+

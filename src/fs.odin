@@ -63,10 +63,10 @@ read_bmp :: proc(path: string) -> (img: ^BMP_Image, ok: bool) {
 		img.color_table = color_table
 	}
 
-	data := make([][]Pixel, img.height)
+	data := make(Img, img.height)
 	img.data = data
 	loop: for x := 0; x < img.height; x += 1 {
-		data[x] = make([]Pixel, img.width);
+		data[x] = make([]Pixel, img.width)
 		for y := 0; y < img.width; y += 1 {
 			if img.colors_used == 0 {
 				img.data[x][y].b, io_err = io.read_byte(stream)

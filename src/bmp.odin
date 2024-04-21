@@ -9,6 +9,7 @@ BMP_CompressionType :: enum {
 }
 
 Pixel :: distinct [3]byte
+Img :: [][]Pixel
 
 BMP_Image :: struct {
 	size:             u32,
@@ -25,13 +26,15 @@ BMP_Image :: struct {
 	colors_used:      u32,
 	important_colors: u32,
 	color_table:      []byte,
-	data:             [][]Pixel,
+	data:             Img,
+}
+
+delete_img :: proc(img_matrix: Img) {
+	for row in img_matrix do delete(row)
+	delete(img_matrix)
 }
 
 delete_bmp :: proc(img: ^BMP_Image) {
-	for row in img.data {
-		delete(row)
-	}
-	delete(img.data)
+	delete_img(img.data)
 	free(img)
 }

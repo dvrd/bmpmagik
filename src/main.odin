@@ -24,7 +24,7 @@ main :: proc() {
 	fmt.println("width in pixels:", img.width)
 	fmt.println("height in pixels:", img.width)
 
-	rotate180(img)
+	rotate90(img)
 
 	write_bmp(img, target)
 }
